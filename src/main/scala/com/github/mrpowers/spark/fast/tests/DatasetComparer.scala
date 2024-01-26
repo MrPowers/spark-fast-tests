@@ -81,13 +81,32 @@ Expected DataFrame Row Count: '${expectedCount}'
                                     ignoreNullable: Boolean = false,
                                     ignoreColumnNames: Boolean = false,
                                     orderedComparison: Boolean = true,
+                                    ignoreColumnOrder: Boolean = true,
                                     truncate: Int = 500): Unit = {
-    if (!SchemaComparer.equals(actualDS.schema, expectedDS.schema, ignoreNullable, ignoreColumnNames)) {
+
+    require(
+      (ignoreColumnNames, ignoreColumnOrder) != (true, true),
+      "Ignore columns is incompatible with an unordered column compare."
+    )
+
+    if (!SchemaComparer.equals(actualDS.schema, expectedDS.schema, ignoreNullable, ignoreColumnNames, ignoreColumnOrder)) {
       throw DatasetSchemaMismatch(
         betterSchemaMismatchMessage(actualDS, expectedDS)
       )
     }
-    if (orderedComparison) {
+
+    if (ignoreColumnOrder) {
+      val (newActualDS, newExpectedDS) = orderColumns(actualDS, expectedDS)
+      assertSmallDatasetEquality(
+        newActualDS,
+        newExpectedDS,
+        ignoreNullable,
+        ignoreColumnNames,
+        orderedComparison,
+        !ignoreColumnOrder,
+        truncate
+      )
+    } else if (orderedComparison) {
       val a = actualDS.collect()
       val e = expectedDS.collect()
       if (!a.sameElements(e)) {
@@ -118,6 +137,12 @@ Expected DataFrame Row Count: '${expectedCount}'
     ds.sort(cols: _*)
   }
 
+  def orderColumns[T](ds1: Dataset[T], ds2: Dataset[T]): (Dataset[T], Dataset[T]) = {
+    val cols          = ds1.columns.map(col)
+    val datasetResult = ds2.select(cols: _*).as[T](ds1.encoder)
+    (ds1, datasetResult)
+  }
+
   /**
    * Raises an error unless `actualDS` and `expectedDS` are equal
    */
@@ -126,9 +151,10 @@ Expected DataFrame Row Count: '${expectedCount}'
                                               equals: (T, T) => Boolean = naiveEquality _,
                                               ignoreNullable: Boolean = false,
                                               ignoreColumnNames: Boolean = false,
+                                              ignoreColumnOrder: Boolean = false,
                                               orderedComparison: Boolean = true): Unit = {
     // first check if the schemas are equal
-    if (!SchemaComparer.equals(actualDS.schema, expectedDS.schema, ignoreNullable, ignoreColumnNames)) {
+    if (!SchemaComparer.equals(actualDS.schema, expectedDS.schema, ignoreNullable, ignoreColumnNames, ignoreColumnOrder)) {
       throw DatasetSchemaMismatch(betterSchemaMismatchMessage(actualDS, expectedDS))
     }
     // then check if the DataFrames have the same content
@@ -165,7 +191,18 @@ Expected DataFrame Row Count: '${expectedCount}'
       }
     }
 
-    if (orderedComparison) {
+    if (ignoreColumnOrder) {
+      val (newActualDS, newExpectedDS) = orderColumns(actualDS, expectedDS)
+      assertLargeDatasetEquality(
+        newActualDS,
+        newExpectedDS,
+        equals,
+        ignoreNullable,
+        ignoreColumnNames,
+        orderedComparison,
+        !ignoreColumnOrder
+      )
+    } else if (orderedComparison) {
       throwIfDatasetsAreUnequal(actualDS, expectedDS)
     } else {
       throwIfDatasetsAreUnequal(sortPreciseColumns(actualDS), sortPreciseColumns(expectedDS))
@@ -177,6 +214,7 @@ Expected DataFrame Row Count: '${expectedCount}'
                                          precision: Double,
                                          ignoreNullable: Boolean = false,
                                          ignoreColumnNames: Boolean = false,
+                                         ignoreColumnOrder: Boolean = false,
                                          orderedComparison: Boolean = true): Unit = {
     val e = (r1: Row, r2: Row) => {
       r1.equals(r2) || RowComparer.areRowsEqual(r1, r2, precision)
@@ -187,6 +225,7 @@ Expected DataFrame Row Count: '${expectedCount}'
       equals = e,
       ignoreNullable,
       ignoreColumnNames,
+      ignoreColumnOrder,
       orderedComparison
     )
   }

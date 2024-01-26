@@ -1,8 +1,7 @@
 package com.github.mrpowers.spark.fast.tests
 
-import org.apache.spark.sql.types.{IntegerType, StringType}
+import org.apache.spark.sql.types.{BooleanType, IntegerType, StringType}
 import SparkSessionExt._
-
 import org.scalatest.FreeSpec
 
 class DataFrameComparerTest extends FreeSpec with DataFrameComparer with SparkSessionTestWrapper {
@@ -254,6 +253,135 @@ class DataFrameComparerTest extends FreeSpec with DataFrameComparer with SparkSe
       }
     }
 
-  }
+    "can performed unordered schema DataFrame comparisons" in {
+      val sourceDF = spark.createDF(
+        List(
+          (1, "word"),
+          (5, "word")
+        ),
+        List(
+          ("number", IntegerType, true),
+          ("word", StringType, true)
+        )
+      )
+      val expectedDF = spark.createDF(
+        List(
+          ("word", 1),
+          ("word", 5)
+        ),
+        List(
+          ("word", StringType, true),
+          ("number", IntegerType, true)
+        )
+      )
+      assertSmallDataFrameEquality(sourceDF, expectedDF, ignoreColumnOrder = true)
+    }
 
+    "can performed unordered schema and unordered row DataFrame comparisons" in {
+      val sourceDF = spark.createDF(
+        List(
+          (5, "word"),
+          (1, "word")
+        ),
+        List(
+          ("number", IntegerType, true),
+          ("word", StringType, true)
+        )
+      )
+      val expectedDF = spark.createDF(
+        List(
+          ("word", 1),
+          ("word", 5)
+        ),
+        List(
+          ("word", StringType, true),
+          ("number", IntegerType, true)
+        )
+      )
+      assertSmallDataFrameEquality(sourceDF, expectedDF, orderedComparison = false, ignoreColumnOrder = true)
+    }
+
+    "throws an error for unordered column DataFrame comparisons that don't match" in {
+      val sourceDF = spark.createDF(
+        List(
+          (5, "word"),
+          (5, "word")
+        ),
+        List(
+          ("number", IntegerType, true),
+          ("word", StringType, true)
+        )
+      )
+      val expectedDF = spark.createDF(
+        List(
+          ("word", 1),
+          ("word", 5)
+        ),
+        List(
+          ("word", StringType, true),
+          ("number", IntegerType, true)
+        )
+      )
+      val e = intercept[DatasetContentMismatch] {
+        assertSmallDataFrameEquality(sourceDF, expectedDF, ignoreColumnOrder = true)
+      }
+
+    }
+
+    "throws an error if both ignore column names and ignore column ordering" in {
+      val sourceDF = spark.createDF(
+        List(
+          (1, "word"),
+          (5, "word")
+        ),
+        List(
+          ("number", IntegerType, true),
+          ("word", StringType, true)
+        )
+      )
+      val expectedDF = spark.createDF(
+        List(
+          ("word", 1),
+          ("word", 5)
+        ),
+        List(
+          ("word", StringType, true),
+          ("number", IntegerType, true)
+        )
+      )
+      val e = intercept[IllegalArgumentException] {
+        assertSmallDataFrameEquality(sourceDF, expectedDF, ignoreColumnNames = true, ignoreColumnOrder = true)
+      }
+    }
+
+    "throw an error if schemas, regardless of order, do not match" in {
+      val sourceDF = spark.createDF(
+        List(
+          ("word", 1, false),
+          ("word", 5, false)
+        ),
+        List(
+          ("word", StringType, true),
+          ("number", IntegerType, true),
+          ("can_fly", BooleanType, true)
+        )
+      )
+
+      val expectedDF = spark.createDF(
+        List(
+          (1, "word"),
+          (5, "word")
+        ),
+        List(
+          ("number", IntegerType, true),
+          ("word", StringType, true)
+        )
+      )
+
+      val e = intercept[DatasetSchemaMismatch] {
+        assertSmallDataFrameEquality(sourceDF, expectedDF, ignoreColumnOrder = false)
+      }
+
+    }
+  }
 }
